@@ -1,0 +1,22 @@
+{
+    "experiment_name": "dtw_001",
+    "description": "sunset1 and sunset2 - single pair test",
+    
+    "data": {
+        "query_folder": "C:/Arjun/Thesis/data/20200422_172431-sunset2/subsampling",
+        "ref_folder": "C:/Arjun/Thesis/data/20200421_170039-sunset1/filtered chunks/subsampled"
+    },
+    
+    "pairs": [
+        {
+            "pair_id": 1,
+            "type": "matching",
+            "time": {
+                "query_start": 5.0,
+                "query_length": 0.5,
+                "ref_start": 2.0,
+                "ref_length": 5.0
+            }
+        }
+    ]
+}

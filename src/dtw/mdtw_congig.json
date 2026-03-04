@@ -1,0 +1,64 @@
+{
+    "experiment_name": "dtw_test_5_pairs",
+    "description": "5 test pairs for DTW validation",
+    
+    "data": {
+        "query_folder": "C:/Arjun/Thesis/data/20200422_172431-sunset2/subsampling",
+        "ref_folder": "C:/Arjun/Thesis/data/20200421_170039-sunset1/filtered chunks/subsampled"
+    },
+    
+    "pairs": [
+        {
+            "pair_id": 1,
+            "type": "matching",
+            "expected_result": "good_match",
+            "description": "Query should match reference segment (same pattern)",
+            "time": {
+                "query_start": 20,
+                "query_length": 1.5,
+                "ref_start": 18,
+                "ref_length": 8
+            }
+        },
+        {
+            "pair_id": 2,
+            "type": "matching",
+            "time": {
+                "query_start": 500,
+                "query_length": 0.5,
+                "ref_start": 12,
+                "ref_length": 4
+            }
+        },
+        {
+            "pair_id": 3,
+            "type": "non_matching",
+            "time": {
+                "query_start": 2.5,
+                "query_length": 1.0,
+                "ref_start": 15.0,
+                "ref_length": 3.5
+            }
+        },
+        {
+            "pair_id": 4,
+            "type": "matching",
+            "time": {
+                "query_start": 850,
+                "query_length": 1,
+                "ref_start": 840,
+                "ref_length": 10
+            }
+        },
+        {
+            "pair_id": 5,
+            "type": "matching",
+            "time": {
+                "query_start": 7.0,
+                "query_length": 0.8,
+                "ref_start": 8.0,
+                "ref_length": 3.0
+            }
+        }
+    ]
+}
