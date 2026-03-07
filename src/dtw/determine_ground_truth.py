@@ -33,15 +33,11 @@ def calc_ground_truth(query_name, query_time, reference_name, reference_time, li
         time of day(HHMMSS), elapsed time(s)     
         
     '''
-    if linux == 1:
-        gps_dir = '/media/aapps/Elements/Data/Brisbane_Event_Data/gps_files/'
-    else:
-        # gps_dir = 'C:/Users/angus/OneDrive - Australian National University/Honours/Data/Datasets/gps_files/'
-        gps_dir = 'C:/Users/angus/OneDrive - Australian National University/Honours/Data/Datasets/gps_files/_full_data_interp/'
-
     #---- Load Data ----#
-    query_gps_path = os.path.join(gps_dir, gps_file_dict[query_name])
-    reference_gps_path = os.path.join(gps_dir, gps_file_dict[reference_name])
+    #query_gps_path = os.path.join(gps_dir, gps_file_dict[query_name])
+    #reference_gps_path = os.path.join(gps_dir, gps_file_dict[reference_name])
+    query_gps_path = r"C:\Arjun\Thesis\data\20200422_172431-sunset2\sunset2_gps.csv"
+    reference_gps_path = r"C:\Arjun\Thesis\data\20200421_170039-sunset1\sunset1_gps.csv"
     query_gps = np.genfromtxt(query_gps_path, delimiter=',')
     reference_gps = np.genfromtxt(reference_gps_path, delimiter=',')
     # round time to nearest integer to match the GPS data

@@ -6,7 +6,7 @@ import pandas as pd
 from datetime import datetime, timezone
 import glob
 import subsequence_dtw_functions as dtw
-from determine_ground_truth import calc_ground_truth, haversine_distance
+from determine_ground_truth import calc_ground_truth
 
 class DTWFromConfig:
     def __init__(self, config_file):
@@ -20,6 +20,7 @@ class DTWFromConfig:
 
         self.query_folder = self.config['data']['query_folder']
         self.ref_folder = self.config['data']['ref_folder']
+        self.validation_threshold = self.config.get('validation_threshold', 50)
         
         '''self.query_start = self.config['time']['query_start']
         self.query_length = self.config['time']['query_length']
@@ -173,7 +174,7 @@ class DTWFromConfig:
         print(f"Final cost: {C[-1, b_ast]:.2f}")
         print(f"Warping path length: {len(P)}")
         
-        return {
+        result =  {
             'pair_id': pair['pair_id'],
             'type': pair['type'],
             'expected_result': pair['expected_result'],
@@ -183,6 +184,48 @@ class DTWFromConfig:
             'ref_end_time': ref_end_time,
             'final_cost': float(C[-1, b_ast])
         }
+        if 'dataset_names' in pair:
+            #query_name = pair['dataset_names']['query']
+            #ref_name = pair['dataset_names']['reference']
+            query_name = "sunset2"
+            ref_name = "sunset1"
+            
+            # The query_end_time is the sum of query_start + query_length from the pair config
+            query_end_time = pair['time']['query_start'] + pair['time']['query_length']
+            
+            # The ref_end_time is from the DTW result (seconds from start of reference traverse)
+            # We need to convert from UNIX timestamp to seconds from start
+            # Get the reference traverse start time
+            ref_traverse_start = self.get_first_file_time(self.ref_folder)
+            ref_end_time_seconds = ref_end_time - ref_traverse_start
+            
+            print(f"\nPreparing GPS validation:")
+            print(f"  Query dataset: {query_name}")
+            print(f"  Query end time (from config): {query_end_time:.2f}s from query start")
+            print(f"  Reference dataset: {ref_name}")
+            print(f"  Reference end time: {ref_end_time_seconds:.2f}s from reference start")
+            
+            # Validate with GPS
+            gps_validation = self.validate_with_gps(
+                query_name, 
+                query_end_time, 
+                ref_name, 
+                ref_end_time_seconds
+            )
+            
+            # Add GPS validation to results
+            result['gps_validation'] = gps_validation
+            
+            # Check if validation matches expected result
+            if pair['expected_result'] == 'match':
+                result['validation_matches_expected'] = gps_validation.get('is_valid', False)
+            elif pair['expected_result'] == 'no_match':
+                # For no_match, we expect the GPS validation to fail (distance > threshold)
+                result['validation_matches_expected'] = not gps_validation.get('is_valid', True)
+            else:
+                result['validation_matches_expected'] = None
+        
+        return result
     
     # ADD this new execute() method:
     def execute(self):
@@ -219,7 +262,55 @@ class DTWFromConfig:
         
         return all_results
     
-    
+    def validate_with_gps(self, query_name, query_end_time, ref_name, ref_end_time):
+        """
+        Validate if the matched segment corresponds to the same physical location using GPS
+        
+        Args:
+            query_name: Name of query dataset (e.g., 'sunset1', 'night', etc.)
+            query_end_time: End time of query segment (seconds from start)
+            ref_name: Name of reference dataset
+            ref_end_time: End time of matched segment in reference (seconds from start)
+        
+        Returns:
+            dict: Validation results including distance and pass/fail status
+        """
+        print(f"\n--- GPS VALIDATION ---")
+        print(f"Query: {query_name} @ {query_end_time:.2f}s")
+        print(f"Reference: {ref_name} @ {ref_end_time:.2f}s")
+        
+        try:
+            reference_path, query_position, estimated_position, distance, groundtruth_index = calc_ground_truth(
+                query_name, query_end_time, ref_name, ref_end_time
+            )
+            
+            # Determine if match is valid (within threshold)
+            is_valid = distance <= self.validation_threshold
+            
+            print(f"\nGPS Validation Results:")
+            print(f"  Query position (lat, lon): ({query_position[0]:.6f}, {query_position[1]:.6f})")
+            print(f"  Estimated position (lat, lon): ({estimated_position[0]:.6f}, {estimated_position[1]:.6f})")
+            print(f"  Distance between positions: {distance:.2f} meters")
+            print(f"  Ground truth index in reference: {groundtruth_index}")
+            print(f"  Validation threshold: {self.validation_threshold}m")
+            print(f"  Match valid: {'✓ YES' if is_valid else '✗ NO'}")
+            
+            return {
+                'query_position': query_position.tolist() if hasattr(query_position, 'tolist') else query_position,
+                'estimated_position': estimated_position.tolist() if hasattr(estimated_position, 'tolist') else estimated_position,
+                'distance_meters': float(distance),
+                'groundtruth_index': int(groundtruth_index),
+                'is_valid': bool(is_valid),
+                'threshold_meters': self.validation_threshold
+            }
+            
+        except Exception as e:
+            print(f"ERROR in GPS validation: {e}")
+            return {
+                'error': str(e),
+                'is_valid': False,
+                'distance_meters': None
+            }
        
 
 
@@ -252,7 +343,7 @@ if __name__ == "__main__":
     results = dtw_exp.execute()
     
     # Optional: Save results
-    save_results(results)
+    #save_results(results)
         
 
 
