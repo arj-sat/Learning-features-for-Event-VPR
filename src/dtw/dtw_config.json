@@ -11,11 +11,13 @@
         {
             "pair_id": 1,
             "type": "matching",
+            "dataset_names":{"query": "sunset2",
+                               "reference": "sunset1" },
             "time": {
                 "query_start": 5.0,
                 "query_length": 0.5,
-                "ref_start": 2.0,
-                "ref_length": 5.0
+                "ref_start": 4.0,
+                "ref_length": 2.0
             }
         }
     ]

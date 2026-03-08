@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 import glob
 import subsequence_dtw_functions as dtw
 from determine_ground_truth import calc_ground_truth
+import time
 
 class DTWFromConfig:
     def __init__(self, config_file):
@@ -152,6 +153,7 @@ class DTWFromConfig:
         
         # Run subsequence DTW
         print("\nComputing DTW...")
+        s_time = time.time()
         C, _, P = dtw.subsequence_dtw(query_events, ref_events, print_en=1)
         
         # Extract results
@@ -159,36 +161,37 @@ class DTWFromConfig:
         b_ast = P[-1, 1]      # End index in reference
         
         # Get corresponding timestamps
-        ref_start_time = ref_events_ts[a_ast, 3]
-        ref_end_time = ref_events_ts[b_ast, 3]
+        ref_start_time =  self.unix_to_brisbane(ref_events_ts[a_ast, 3])
+        ref_end_time = self.unix_to_brisbane(ref_events_ts[b_ast, 3])
         
         print("\n" + "="*40)
         print(f"DTW RESULTS - Pair {pair['pair_id']}")
         print("="*40)
         print(f"Type: {pair['type']}")
-        print(f"Expected: {pair['expected_result']}")
         print(f"\nMATCHED SEGMENT:")
         print(f"  Start index: {a_ast} → UNIX: {ref_start_time:.6f}")
         print(f"  End index: {b_ast} → UNIX: {ref_end_time:.6f}")
         print(f"  Brisbane: {self.unix_to_brisbane(ref_start_time)} to {self.unix_to_brisbane(ref_end_time)}")
         print(f"Final cost: {C[-1, b_ast]:.2f}")
         print(f"Warping path length: {len(P)}")
-        
+        e_time = time.time()
+
         result =  {
             'pair_id': pair['pair_id'],
             'type': pair['type'],
-            'expected_result': pair['expected_result'],
             'a_ast': a_ast,
             'b_ast': b_ast,
             'ref_start_time': ref_start_time,
             'ref_end_time': ref_end_time,
-            'final_cost': float(C[-1, b_ast])
+            'final_cost': float(C[-1, b_ast]),
+            'time taken (min)': round((e_time - s_time)/60, 2)
         }
         if 'dataset_names' in pair:
-            #query_name = pair['dataset_names']['query']
-            #ref_name = pair['dataset_names']['reference']
-            query_name = "sunset2"
-            ref_name = "sunset1"
+            query_name = pair['dataset_names']['query']
+            ref_name = pair['dataset_names']['reference']
+            #query_name = "sunset2"
+            #ref_name = "sunset1"
+            
             
             # The query_end_time is the sum of query_start + query_length from the pair config
             query_end_time = pair['time']['query_start'] + pair['time']['query_length']
@@ -214,17 +217,7 @@ class DTWFromConfig:
             )
             
             # Add GPS validation to results
-            result['gps_validation'] = gps_validation
-            
-            # Check if validation matches expected result
-            if pair['expected_result'] == 'match':
-                result['validation_matches_expected'] = gps_validation.get('is_valid', False)
-            elif pair['expected_result'] == 'no_match':
-                # For no_match, we expect the GPS validation to fail (distance > threshold)
-                result['validation_matches_expected'] = not gps_validation.get('is_valid', True)
-            else:
-                result['validation_matches_expected'] = None
-        
+        result.update(gps_validation)
         return result
     
     # ADD this new execute() method:
@@ -315,20 +308,15 @@ class DTWFromConfig:
 
 
 # Simple function to save results if needed
-def save_results(results, output_file="dtw_results.json"):
-    """Save DTW results to file"""
-    import pickle
-    import pandas as pd
+def save_results(results):
+    import os   
+    # Convert results to DataFrame
+    df = pd.DataFrame(results)
+    df.to_csv("output.csv", index=False)
     
-    # Save full results as JSON
-    with open(output_file, 'w') as f:
-        json.dump(results, f, indent=4)
-    
-    # Also save as CSV for easy viewing
-    csv_file = output_file.replace('.json', '.csv')
-    pd.DataFrame(results).to_csv(csv_file, index=False)
-    
-    print(f"\nResults saved to {output_file} and {csv_file}")
+    print(f"Columns: {', '.join(df.columns.tolist())}")
+    print(f"\nResults saved as csv")
+
         
 
 ###Main
@@ -342,8 +330,7 @@ if __name__ == "__main__":
     dtw_exp = DTWFromConfig(config_file)
     results = dtw_exp.execute()
     
-    # Optional: Save results
-    #save_results(results)
+    save_results(results)
         
 
 

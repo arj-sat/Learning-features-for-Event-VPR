@@ -1,0 +1,2 @@
+pair_id,type,a_ast,b_ast,ref_start_time,ref_end_time,final_cost,time taken_s,query_position,estimated_position,distance_meters,groundtruth_index,is_valid,threshold_meters
+1,matching,0,3092,1587452587.689236,1587452588.3205569,77.52418977325722,409.86,"[152.91111183333334, 630.0]","[152.91197383333332, 15.0]",11675467.297678668,-32,False,50
