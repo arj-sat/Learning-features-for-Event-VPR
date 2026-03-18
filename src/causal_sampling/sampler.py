@@ -42,8 +42,9 @@ class FilterDataRecursive():
         
         # Exit after printing debug info
         print("Exiting after debug print...")
-        exit()'''
-        
+        exit()''' 
+
+        self.tau = int(self.tau * 1000)
         self.last_time_tensor = np.full((2,self.H,self.W), float('0') , dtype=np.float32)
         print(f"Image width: {self.image_size[0]}, Image height: {self.image_size[1]}")
         self.temporal_accumulation_tensor = np.full((2,self.image_size[1],self.image_size[0]), float('0') , dtype=np.float32)
@@ -69,6 +70,7 @@ class FilterDataRecursive():
 
             
             # Compute the temporal lag
+            #print(f"tau: {self.tau}")
             temporal_lag = np.exp(- (t - self.last_time_tensor[pp,h_start:h_end+1,w_start:w_end+1])/self.tau)
 
             # update the last time tensor

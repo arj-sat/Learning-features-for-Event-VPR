@@ -6,6 +6,33 @@ import pandas as pd
 import numpy as np
 import torch
 from pathlib import Path
+import hashlib
+
+def create_seed(seed_str: str) -> int:
+    """Create a deterministic seed from a string."""
+    return int(hashlib.sha256(seed_str.encode()).hexdigest(), 16)
+
+
+def filter_values_normalizing(filter_values: np.ndarray, normalization_length: int = None) -> np.ndarray:
+    """Normalize filter values using a sliding window.
+    
+    Args:
+        filter_values: Array of filter values to normalize
+        normalization_length: Window size for normalization (if None, no normalization)
+    
+    Returns:
+        Normalized filter values
+    """
+    if normalization_length is None:
+        return filter_values
+    
+    filter_values_normalized = np.zeros_like(filter_values)
+    for i, ev in enumerate(filter_values):
+        start = max(0, i - normalization_length)
+        chunk_part = filter_values[start:i+1]
+        chunk_part_normalized = (chunk_part - np.min(chunk_part)) / (np.max(chunk_part) - np.min(chunk_part) + 1e-6)
+        filter_values_normalized[i] = chunk_part_normalized[-1]
+    return filter_values_normalized
 
 
 
@@ -38,7 +65,8 @@ def csv_to_pyg_data(df: pd.DataFrame,
     return data
     
 def process_csv_file(csv_path: str, filter_instance: FilterDataRecursive, 
-                    sampling_threshold: float = 0.01) -> pd.DataFrame:
+                    sampling_threshold: float = 0.01, fixed_sampling: bool = True, seed_str: str = 'fixed_subsampling',
+                    normalization_length: int = None) -> pd.DataFrame:
     """Process a single CSV file and return filtered events."""
         
     # Load CSV
@@ -56,12 +84,29 @@ def process_csv_file(csv_path: str, filter_instance: FilterDataRecursive,
     # Get filter values
     print("  Computing density values...")
     filter_values = filter_instance.subsample(data)
+
+
+    #Normalisation
+    if normalization_length:  # <-- NEW NORMALIZATION BLOCK
+        print(f"  Normalizing filter values with window length: {normalization_length}")
+        filter_values = filter_values_normalizing(filter_values, normalization_length)
     
     # Apply threshold-based sampling
     print("  Applying threshold-based sampling...")
-    np.random.seed(42)
-    random_values = np.random.rand(len(filter_values))
-    keep_mask = random_values < (sampling_threshold * filter_values)
+    if fixed_sampling:  # <-- NEW CONDITIONAL BLOCK
+    # Create deterministic seed based on file name and seed string
+        file_name = Path(csv_path).stem
+        combined_seed_str = seed_str + '_' + file_name
+        seed = create_seed(combined_seed_str)
+        
+        # Use numpy's RandomState for deterministic random numbers
+        rng = np.random.RandomState(seed % (2**32))
+        random_values = rng.rand(len(filter_values))
+    else:  
+        # Random sampling without fixed seed
+        random_values = np.random.rand(len(filter_values))
+        
+    keep_mask = filter_values >= (random_values * sampling_threshold)
     
     # Filter events
     filtered_df = df[keep_mask].copy()
@@ -78,11 +123,11 @@ def main():
     
     #os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
     #INPUT_FOLDER = r"C:\Arjun\Thesis\data\20200421_170039-sunset1\filtered chunks"
-    INPUT_FOLDER = r"C:\Arjun\Thesis\data\20200422_172431-sunset2\filtered"
-    #OUTPUT_FOLDER = r"C:\Arjun\Thesis\data\20200421_170039-sunset1\filtered chunks\subsampled"
-    OUTPUT_FOLDER = r"C:\Arjun\Thesis\data\20200422_172431-sunset2\subsampling"
+    INPUT_FOLDER = r"C:\Arjun\Thesis\data\20200421_170039-sunset1\filtered chunks"
+    OUTPUT_FOLDER = r"C:\Arjun\Thesis\data\20200421_170039-sunset1\filtered chunks\subsampled"
+    #OUTPUT_FOLDER = r"C:\Arjun\Thesis\data\20200422_172431-sunset2\subsampling"
     global LOG_FILE
-    LOG_FILE = r"C:\Arjun\Thesis\data\20200422_172431-sunset2\subsampling\process_log.txt"
+    LOG_FILE = r"C:\Arjun\Thesis\data\20200421_170039-sunset1\filtered chunks\process_log.txt"
 
 
     '''
@@ -95,7 +140,7 @@ def main():
       mean_normalized: null #False If True, the filter values are normalized by dividing them by their mean
     '''
 
-    IMAGE_SIZE = (346, 260)  # (height, width) - ADJUST THIS!
+    IMAGE_SIZE = (346, 260)  # (height, width) 
     
     # Filter parameters
     TAU_MS = 30.0  # Temporal decay in milliseconds
@@ -103,13 +148,16 @@ def main():
     
     # Sampling parameters
     SAMPLING_THRESHOLD = 0.005  #0.01, 0.1
+    FIXED_SAMPLING = True  # Set to True for deterministic results
+    SEED_STR = 'fixed_subsampling'
+    NORMALIZATION_LENGTH = None  #100
 
     #data = csv_to_pyg_data(CSV_FILE)
 
     print("\n2. Initializing causal density filter...")
     print(f"   Image size: {IMAGE_SIZE}")
     print(f"   Tau: {TAU_MS} ms")
-    print(f"   Filter size: {FILTER_SIZE}")
+    print(f"   Filter size: {FILTER_SIZE}") 
     
     filter_instance = FilterDataRecursive(TAU_MS, FILTER_SIZE, IMAGE_SIZE)
 
@@ -135,8 +183,8 @@ def main():
         with open(LOG_FILE, 'a') as f:
             f.write(f"Loading {csv_file.name}\n")
         # Process the file
-        filtered_df = process_csv_file(str(csv_file), filter_instance, SAMPLING_THRESHOLD)
-        
+        filtered_df = process_csv_file(str(csv_file), filter_instance, SAMPLING_THRESHOLD,fixed_sampling=FIXED_SAMPLING,
+                                        seed_str=SEED_STR, normalization_length=NORMALIZATION_LENGTH)
         # Save filtered results
         output_path = os.path.join(OUTPUT_FOLDER, f"filtered_{csv_file.name}")
         filtered_df.to_csv(output_path, index=False)
