@@ -33,6 +33,70 @@ class DTWFromConfig:
         print(f"  Query: {self.query_start}, length: {self.query_length}s")
         print(f"  Reference: {self.ref_start}, length: {self.ref_length}s")'''
 
+    def density_select(self , events_ts, events_per_window=10, window_size_sec=0.1):
+        """
+        Subsample events to keep only top N events per time window based on density_value
+    
+        Args:
+            events_ts: Array of events with columns [x, y, polarity, timestamp, density_value]
+                    (the full events with timestamps and density)
+            events_per_window: Number of events to keep per time window (default: 10)
+            window_size_sec: Size of time window in seconds (default: 0.1)
+        
+        Returns:
+            events_dtw: Subsampled events with columns [x, y, polarity] (for DTW)
+            events_ts: Subsampled events with all columns (for timestamp reference)
+        """
+        print(events_ts.shape)
+        print(events_ts[0])
+        print(events_ts[1])
+        sort_indices = np.argsort(events_ts[:, 3])
+        events_ts_sorted = events_ts[sort_indices]
+
+        min_time = events_ts_sorted[0, 3]
+        max_time = events_ts_sorted[-1, 3]
+        num_windows = int(np.ceil((max_time - min_time) / window_size_sec))
+        print(f"\n  Uniformising events:")
+        print(f"    Original events: {len(events_ts_sorted)}")
+        print(f"    Time range: {min_time:.3f} to {max_time:.3f}s")
+        print(f"    Windows: {num_windows} windows of {window_size_sec}s")
+        print(f"    Keeping top {events_per_window} events/window")
+
+        selected_indices = []
+        for i in range(num_windows):
+            window_start = min_time + (i * window_size_sec)
+            window_end = window_start + window_size_sec
+            
+            # Find events in this window
+            mask = (events_ts_sorted[:, 3] >= window_start) & (events_ts_sorted[:, 3] < window_end)
+            window_events_indices = np.where(mask)[0]
+
+            if len(window_events_indices) > 0:
+            # Get density values for events in this window
+                density_values = events_ts_sorted[window_events_indices, 4]
+                
+                # Get indices of top N events (highest density values)
+                if len(window_events_indices) <= events_per_window:
+                    # Keep all events in this window
+                    selected_indices.extend(window_events_indices)
+                else:
+                    # Keep only top N events
+                    top_indices_local = np.argsort(density_values)[-events_per_window:]
+                    top_global_indices = window_events_indices[top_indices_local]
+                    selected_indices.extend(top_global_indices)
+
+        selected_indices = sorted(selected_indices)
+
+        # Create subsampled arrays
+        events_ts_subsampled = events_ts_sorted[selected_indices]
+        events_dtw_subsampled = events_ts_subsampled[:, :3]
+        events_dtw_subsampled[:, 2] = events_dtw_subsampled[:, 2].astype(int)
+        
+        print(f"    After subsampling: {len(events_ts_subsampled)} events")
+        print(f"    Reduction: {(1 - len(events_ts_subsampled)/len(events_ts_sorted)) * 100:.1f}%")
+        
+        return events_dtw_subsampled, events_ts_subsampled
+
     def unix_to_brisbane(self, unix_time):
         """Convert UNIX timestamp to Brisbane time (UTC+10)"""
         # Brisbane is UTC+10 (no daylight saving)
@@ -57,23 +121,24 @@ class DTWFromConfig:
         #print("First timestamp " + first_timestamp)
         return float(first_timestamp)
         
-    def load_event_slice(self, folder, seq_start, seq_length):
+    def load_event_slice(self, folder, seq_start, seq_end):
         """
         Load events from batch files between start_offset and end_offset seconds
         from the beginning of the traverse
         """
         # Get the absolute start time of the traverse
-        traverse_start_unix = self.get_first_file_time(folder)
+        traverse_start_unix = self.get_first_file_time(folder) 
         # Calculate absolute time window
         print(f"start_offset: {seq_start}")
-        print(f"seq_length: {seq_length}")
+        print(f"seq_length: {seq_end - seq_start}")
 
-        abs_seq_start_time = traverse_start_unix + seq_start
-        abs_seq_end_time = abs_seq_start_time + seq_length
+        #abs_seq_start_time = traverse_start_unix + seq_start
+        abs_seq_start_time = seq_start
+        #abs_seq_end_time = abs_seq_start_time + seq_length
+        abs_seq_end_time = seq_end
         
         print(f"\n  Traverse start (UNIX): {traverse_start_unix:.6f}")
         print(f"  Traverse start (Brisbane): {self.unix_to_brisbane(traverse_start_unix)}")
-        print(f"  Window: {seq_start}s to {seq_start + seq_length}s from start")
         print(f"  Absolute: {abs_seq_start_time:.6f} to {abs_seq_end_time:.6f} UNIX")
         print(f"  Brisbane time: {self.unix_to_brisbane(abs_seq_start_time)} to {self.unix_to_brisbane(abs_seq_end_time)}")
         
@@ -99,8 +164,8 @@ class DTWFromConfig:
                 # Filter events in the window
                 mask = (timestamps >= abs_seq_start_time) & (timestamps <= abs_seq_end_time)
                 window_events =df[mask].values
-                window_events = window_events[:,:4]
-                window_events[:, 2] = window_events[:, 2].astype(int)
+                window_events = window_events[:,:5]
+                window_events[:, 2] = window_events[:, 2].astype(int) # converting polarity to integers
                 if len(window_events) > 0:
                     all_events.append(window_events)
                     #file_events_count += len(window_events)
@@ -122,13 +187,15 @@ class DTWFromConfig:
             print(f"    - {file_name}: {count} events")
         
         # Combine all events
+        if len(all_events) == 0:
+            return np.array([]), np.array([])
         events = np.vstack(all_events)
         # Sort by timestamp (just in case)
         events_ts = events[events[:, 3].argsort()]
-        events_dtw = events_ts[:, :3]
+        #events_dtw = events_ts[:, :3]
         print("\n  Sample of sorted events (first 3):")
         print("  [x, y, polarity, timestamp]")
-        for event in events[:10]:
+        for event in events_ts[:5]:
             print(f"  {event}")
         
         # Normalize time to start at 0 for DTW (as done in the original code)
@@ -143,13 +210,11 @@ class DTWFromConfig:
         print(f"  Collected {total_events} events from {files_processed} files")
         print(f"  Normalized time range: {events_normalized[0,3]:.3f} - {events_normalized[-1,3]:.3f}s")'''
         
-        return events_dtw, events_ts
+        return events_ts
     
     
     def run_dtw(self, query_events, ref_events, ref_events_ts, pair):
         """Run subsequence DTW for a single pair"""
-        print(f"\nQuery data shape: {query_events.shape}")
-        print(f"Reference data shape: {ref_events.shape}")
         
         # Run subsequence DTW
         print("\nComputing DTW...")
@@ -163,38 +228,62 @@ class DTWFromConfig:
         # Get corresponding timestamps
         ref_start_time =  self.unix_to_brisbane(ref_events_ts[a_ast, 3])
         ref_end_time = self.unix_to_brisbane(ref_events_ts[b_ast, 3])
+
+        #Check match
+        matched_ref_ts = ref_events_ts[(a_ast + b_ast) // 2, 3]
+        expected_match_ts = pair['ref_match']
+        timestamp_error = abs(matched_ref_ts - expected_match_ts)
+        timestamp_match = timestamp_error < 5.0  # Within 1 second
         
         print("\n" + "="*40)
         print(f"DTW RESULTS - Pair {pair['pair_id']}")
         print("="*40)
         print(f"Type: {pair['type']}")
+        print(f"\nQuery data shape: {query_events.shape}")
+        print(f"Reference data shape: {ref_events.shape}")
+
         print(f"\nMATCHED SEGMENT:")
-        print(f"  Start index: {a_ast} → UNIX: {ref_start_time:.6f}")
-        print(f"  End index: {b_ast} → UNIX: {ref_end_time:.6f}")
-        print(f"  Brisbane: {self.unix_to_brisbane(ref_start_time)} to {self.unix_to_brisbane(ref_end_time)}")
-        print(f"Final cost: {C[-1, b_ast]:.2f}")
+        print()
+        print(f"Start index: {a_ast} → UNIX: {ref_start_time}")
+        print(f"End index: {b_ast} → UNIX: {ref_end_time}")
+        print(f"Expected match timestamp: {self.unix_to_brisbane(expected_match_ts)}")
+        print(f"Actual matched timestamp: {self.unix_to_brisbane(matched_ref_ts)}")
+        print(f"Timestamp error: {timestamp_error:.3f} seconds")
+        print(f"Timestamp matches expected: {'✓ YES' if timestamp_match else '✗ NO'}")
+        print(f"Final cost: {C[-1, b_ast]}")
         print(f"Warping path length: {len(P)}")
         e_time = time.time()
+        print(f"time taken for pair: {round((e_time - s_time)/60, 2)} min")
 
         result =  {
             'pair_id': pair['pair_id'],
-            'type': pair['type'],
+            'type': pair['type'],  
             'a_ast': a_ast,
             'b_ast': b_ast,
-            'ref_start_time': ref_start_time,
-            'ref_end_time': ref_end_time,
+            'query_start_time': self.unix_to_brisbane(pair["query_start"]),
+            'query_len': pair["query_l"],
+            'ref_start_time': self.unix_to_brisbane(pair["ref_start"]),
+            'ref_len': pair["ref_l"],
+            #'matched_ref_start':ref_start_time,
+            #'matched_ref_end': ref_end_time,
+            'matched_ref_timestamp': matched_ref_ts,
+            'expected_ref_timestamp': expected_match_ts,
+            'timestamp_error_seconds': timestamp_error,
+            'timestamp_match': timestamp_match,
             'final_cost': float(C[-1, b_ast]),
-            'time taken (min)': round((e_time - s_time)/60, 2)
+            'time_taken_min': round((e_time - s_time)/60, 2)
         }
+        '''gps_validation = {}
         if 'dataset_names' in pair:
-            query_name = pair['dataset_names']['query']
-            ref_name = pair['dataset_names']['reference']
-            #query_name = "sunset2"
-            #ref_name = "sunset1"
+            #query_name = pair['dataset_names']['query']
+            #ref_name = pair['dataset_names']['reference']
+            query_name = "sunset2"
+            ref_name = "sunset1"
+            
             
             
             # The query_end_time is the sum of query_start + query_length from the pair config
-            query_end_time = pair['time']['query_start'] + pair['time']['query_length']
+            query_end_time = pair['query_end']
             
             # The ref_end_time is from the DTW result (seconds from start of reference traverse)
             # We need to convert from UNIX timestamp to seconds from start
@@ -217,7 +306,7 @@ class DTWFromConfig:
             )
             
             # Add GPS validation to results
-        result.update(gps_validation)
+        result.update(gps_validation)'''
         return result
     
     # ADD this new execute() method:
@@ -228,26 +317,45 @@ class DTWFromConfig:
         print("="*60)
         
         all_results = []
+
+        events_per_window = self.config.get('events_per_0_1sec', 25)
+        window_size = self.config.get('window_size_sec', 0.1)
         
         for pair in self.config['pairs']:  # Loop through each pair
             print("\n" + "="*60)
             print("="*60)
-            
             # Load query events using pair-specific times
             print("\n--- LOADING QUERY EVENTS ---")
-            query_events, _ = self.load_event_slice(
+            query_events_ts = self.load_event_slice(
                 self.query_folder, 
-                pair['time']['query_start'],    # Use pair-specific value
-                pair['time']['query_length']     # Use pair-specific value
+                pair['query_start'],    # Use pair-specific value
+                pair['query_end']     # Use pair-specific value
             )
-            
+            print(query_events_ts.shape)
             # Load reference events using pair-specific times
             print("\n--- LOADING REFERENCE EVENTS ---")
-            ref_events, ref_events_ts = self.load_event_slice(
+            ref_events_ts = self.load_event_slice(
                 self.ref_folder, 
-                pair['time']['ref_start'],       # Use pair-specific value
-                pair['time']['ref_length']        # Use pair-specific value
+                pair['ref_start'],       # Use pair-specific value
+                pair['ref_end']        # Use pair-specific value
             )
+
+            # Choosing top events
+            print("\n--- PICKING TOP EVENTS ---")
+            query_events, query_events_ts = self.density_select(
+                query_events_ts, 
+                events_per_window=events_per_window,
+                window_size_sec=window_size
+            )
+            print(f"Query events shape after top {events_per_window}: {query_events.shape}")
+
+            ref_events, ref_events_ts = self.density_select(
+                ref_events_ts,
+                events_per_window=events_per_window,
+                window_size_sec=window_size
+            )
+            print(f"Reference events shape after top {events_per_window}: {ref_events.shape}")
+            #exit()
             
             # Run DTW for this pair
             result = self.run_dtw(query_events, ref_events, ref_events_ts, pair)
@@ -308,11 +416,11 @@ class DTWFromConfig:
 
 
 # Simple function to save results if needed
-def save_results(results):
+def save_results(results, exp_no):
     import os   
     # Convert results to DataFrame
     df = pd.DataFrame(results)
-    df.to_csv("output.csv", index=False)
+    df.to_csv(f"exp/{exp_no}.csv", index=False)
     
     print(f"Columns: {', '.join(df.columns.tolist())}")
     print(f"\nResults saved as csv")
@@ -322,7 +430,8 @@ def save_results(results):
 ###Main
 
 if __name__ == "__main__":
-    config_file = "dtw_config.json"
+    exp_no = "2"
+    config_file = f"exp/{exp_no}_mdtw_config.json"
     if not os.path.exists(config_file):
         print(f"ERROR: Config file '{config_file}' not found!")
         sys.exit(1)
@@ -330,7 +439,7 @@ if __name__ == "__main__":
     dtw_exp = DTWFromConfig(config_file)
     results = dtw_exp.execute()
     
-    save_results(results)
+    save_results(results,exp_no=exp_no)
         
 
 

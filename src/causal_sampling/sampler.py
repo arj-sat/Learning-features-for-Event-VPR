@@ -10,11 +10,11 @@ class FilterDataRecursive():
     def __init__(self, tau: float, filter_size: int, image_size: Tuple[int,int]):
         
         assert filter_size % 2 == 1, "Filter size must be odd"
-        self.tau = tau
+        self.tau = float(tau/1000)
         self.filter_size = filter_size
-        self.image_size = image_size
+        #self.image_size = image_size
         self.K = filter_size // 2
-        self.W, self.H = image_size
+        self.W, self.H = image_size #(346, 260)
    
         
         sigma = filter_size / 5.0
@@ -44,11 +44,14 @@ class FilterDataRecursive():
         print("Exiting after debug print...")
         exit()''' 
 
-        self.tau = int(self.tau * 1000)
-        self.last_time_tensor = np.full((2,self.H,self.W), float('0') , dtype=np.float32)
-        print(f"Image width: {self.image_size[0]}, Image height: {self.image_size[1]}")
-        self.temporal_accumulation_tensor = np.full((2,self.image_size[1],self.image_size[0]), float('0') , dtype=np.float32)
 
+
+        self.last_time_tensor = np.full((2,self.H,self.W), float('0') , dtype=np.float64)
+        print(f"Image width: {self.W}, Image height: {self.H}")
+        #self.temporal_accumulation_tensor = np.full((2,self.image_size[1],self.image_size[0]), float('0') , dtype=np.float64)
+        self.temporal_accumulation_tensor = np.full((2,self.H,self.W), float('0') , dtype=np.float64)
+
+  
         filter_value_recursive = np.zeros(data.pos.shape[0], dtype=np.float32)
 
         start_time = time.time()
@@ -60,8 +63,13 @@ class FilterDataRecursive():
             w = ts[-3].int()
             t = ts[-1].numpy()
 
-            if i % 100000 == 0:
+            if i ==0 and i % 200000 == 0:
                 print(f"  Event {i}: Height: {h}, Width: {w}")
+                
+            if h >= self.H or w >= self.W:
+                print(f"ERROR: Event {i}: h={h} (max={self.H-1}), w={w} (max={self.W-1})")
+                print(f"  ts[-3]={ts[-3]}, ts[-2]={ts[-2]}")
+                raise IndexError(f"Coordinate out of bounds")     
     
             h_start = max(h - self.K, 0)
             h_end = min(h + self.K, self.H-1)
@@ -71,6 +79,7 @@ class FilterDataRecursive():
             
             # Compute the temporal lag
             #print(f"tau: {self.tau}")
+
             temporal_lag = np.exp(- (t - self.last_time_tensor[pp,h_start:h_end+1,w_start:w_end+1])/self.tau)
 
             # update the last time tensor

@@ -7,6 +7,7 @@ import numpy as np
 import torch
 from pathlib import Path
 import hashlib
+import matplotlib.pyplot as plt
 
 def create_seed(seed_str: str) -> int:
     """Create a deterministic seed from a string."""
@@ -44,12 +45,12 @@ def csv_to_pyg_data(df: pd.DataFrame,
 
     
     # Print column info for debugging
-    print(f"CSV columns: {list(df.columns)}")
-    print(f"First few rows:\n{df.head()}")
+    #print(f"CSV columns: {list(df.columns)}")
+    #print(f"First few rows:\n{df.head()}")
 
     x_coords = df[x_col].values.astype(np.float32)
     y_coords = df[y_col].values.astype(np.float32)
-    timestamps = df[t_col].values.astype(np.float32)
+    timestamps = df[t_col].values.astype(np.float64)
     polarities = df[p_col].values
 
     polarities = df[p_col].values.astype(np.float32) * 2 - 1    
@@ -64,7 +65,7 @@ def csv_to_pyg_data(df: pd.DataFrame,
     
     return data
     
-def process_csv_file(csv_path: str, filter_instance: FilterDataRecursive, 
+def process_csv_file(csv_path: str, filter_instance: FilterDataRecursive, OUTPUT_FOLDER: str,
                     sampling_threshold: float = 0.01, fixed_sampling: bool = True, seed_str: str = 'fixed_subsampling',
                     normalization_length: int = None) -> pd.DataFrame:
     """Process a single CSV file and return filtered events."""
@@ -86,6 +87,46 @@ def process_csv_file(csv_path: str, filter_instance: FilterDataRecursive,
     filter_values = filter_instance.subsample(data)
 
 
+    #Variance
+    print(f"\n  Filter value statistics:")
+    print(f"    Min: {filter_values.min():.6f}")
+    print(f"    Max: {filter_values.max():.6f}")
+    print(f"    Mean: {filter_values.mean():.6f}")
+    print(f"    Median: {np.median(filter_values):.6f}")
+    print(f"    Std: {filter_values.std():.6f}")
+
+
+    #Plotting
+    file_name = Path(csv_path).stem
+    plot_path = Path(OUTPUT_FOLDER).parent / "debug_plots"
+    plot_path.mkdir(exist_ok=True)
+    
+    plt.figure(figsize=(12, 4))
+    
+    plt.subplot(1, 2, 1)
+    plt.hist(filter_values, bins=50, edgecolor='black')
+    plt.title(f'Filter Value Distribution - {file_name}')
+    plt.xlabel('Density Value')
+    plt.ylabel('Count')
+    plt.axvline(x=sampling_threshold, color='r', linestyle='--', 
+                label=f'Threshold: {sampling_threshold}')
+    plt.legend()
+    
+    plt.subplot(1, 2, 2)
+    # Plot every 100th point to avoid overcrowding
+    step = max(1, len(filter_values) // 10000)
+    plt.scatter(range(0, len(filter_values), step), 
+                filter_values[::step], s=1, alpha=0.5)
+    plt.title('Filter Values Over Time')
+    plt.xlabel('Event Index')
+    plt.ylabel('Density Value')
+    plt.axhline(y=sampling_threshold, color='r', linestyle='--')
+    
+    plt.tight_layout()
+    plt.savefig(plot_path / f'density_{file_name}.png', dpi=150)
+    plt.close()
+
+
     #Normalisation
     if normalization_length:  # <-- NEW NORMALIZATION BLOCK
         print(f"  Normalizing filter values with window length: {normalization_length}")
@@ -105,8 +146,9 @@ def process_csv_file(csv_path: str, filter_instance: FilterDataRecursive,
     else:  
         # Random sampling without fixed seed
         random_values = np.random.rand(len(filter_values))
-        
-    keep_mask = filter_values >= (random_values * sampling_threshold)
+
+    #keep_mask = filter_values >= (random_values * sampling_threshold)
+    keep_mask = filter_values >= 0.95
     
     # Filter events
     filtered_df = df[keep_mask].copy()
@@ -122,15 +164,17 @@ def process_csv_file(csv_path: str, filter_instance: FilterDataRecursive,
 def main():
     
     #os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
-    #INPUT_FOLDER = r"C:\Arjun\Thesis\data\20200421_170039-sunset1\filtered chunks"
+    #INPUT_FOLDER = r"C:\Arjun\Thesis\data\20200422_172431-sunset2\filtered"
     INPUT_FOLDER = r"C:\Arjun\Thesis\data\20200421_170039-sunset1\filtered chunks"
     OUTPUT_FOLDER = r"C:\Arjun\Thesis\data\20200421_170039-sunset1\filtered chunks\subsampled"
     #OUTPUT_FOLDER = r"C:\Arjun\Thesis\data\20200422_172431-sunset2\subsampling"
     global LOG_FILE
-    LOG_FILE = r"C:\Arjun\Thesis\data\20200421_170039-sunset1\filtered chunks\process_log.txt"
+    #LOG_FILE = r"C:\Arjun\Thesis\data\20200422_172431-sunset2\subsampling\process_log.txt"
+    LOG_FILE = r"C:\Arjun\Thesis\data\20200421_170039-sunset1\filtered chunks\subsampled\process_log.txt"
 
 
     '''
+    
     spatiotemporal_filtering_subsampling: #Subsampling the events randomly with probability proportional to spatiotemporal filtering values
       transform: null #True
       tau: null #30 in milliseconds. Temporal constant for spatiotemporal filtering
@@ -141,17 +185,17 @@ def main():
     '''
 
     IMAGE_SIZE = (346, 260)  # (height, width) 
+    #IMAGE_SIZE = (260, 346) 
     
     # Filter parameters
     TAU_MS = 30.0  # Temporal decay in milliseconds
     FILTER_SIZE = 7  # Spatial filter size (must be odd)
     
     # Sampling parameters
-    SAMPLING_THRESHOLD = 0.005  #0.01, 0.1
+    SAMPLING_THRESHOLD = 9  #0.01, 0.1, 0.05
     FIXED_SAMPLING = True  # Set to True for deterministic results
     SEED_STR = 'fixed_subsampling'
-    NORMALIZATION_LENGTH = None  #100
-
+    NORMALIZATION_LENGTH = 300
     #data = csv_to_pyg_data(CSV_FILE)
 
     print("\n2. Initializing causal density filter...")
@@ -177,18 +221,22 @@ def main():
     print("\nLast 5 CSV files (in processing order):")
     for i, csv_file in enumerate(csv_files_sorted[-5:], start=len(csv_files_sorted)-4):
         print(f"  {i+1}. {csv_file.name}")'''
-
+    count = 0
     for csv_file in csv_files_sorted:
+        count = count + 1
         print(f"Loading {csv_file.name}")
         with open(LOG_FILE, 'a') as f:
             f.write(f"Loading {csv_file.name}\n")
-        # Process the file
-        filtered_df = process_csv_file(str(csv_file), filter_instance, SAMPLING_THRESHOLD,fixed_sampling=FIXED_SAMPLING,
+        # Process the file 
+        filtered_df = process_csv_file(str(csv_file), filter_instance, OUTPUT_FOLDER, SAMPLING_THRESHOLD,fixed_sampling=FIXED_SAMPLING,
                                         seed_str=SEED_STR, normalization_length=NORMALIZATION_LENGTH)
         # Save filtered results
         output_path = os.path.join(OUTPUT_FOLDER, f"filtered_{csv_file.name}")
         filtered_df.to_csv(output_path, index=False)
         print(f"  Saved to: {output_path}")
+        print(f"{count} csvs done, files left: {len(csv_files_sorted)},{int(count*100/len(csv_files_sorted))}% completed")
+        
+        #exit()
 
 
 
