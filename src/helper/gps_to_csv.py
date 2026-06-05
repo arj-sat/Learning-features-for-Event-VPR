@@ -32,8 +32,8 @@ def get_gps(nmea_file_path):
     return np.array(np.vstack((latitudes, longitudes, timestamps))).T
 
 if __name__=="__main__":
-    nmea_path = r"C:\Arjun\Thesis\data\20200422_172431-sunset2\20200422_172431-sunset2_concat.nmea"
-    output_path = r"C:\Arjun\Thesis\data\20200422_172431-sunset2\sunset2_gps.csv"
+    nmea_path = r"C:\Arjun\Thesis\data\20200427_181204-night\20200427_181204-night_concat.nmea"
+    output_path = r"C:\Arjun\Thesis\data\20200427_181204-night\night_gps.csv"
     gps_data = get_gps(nmea_path)
 
     for i in range(min(5, len(gps_data))):

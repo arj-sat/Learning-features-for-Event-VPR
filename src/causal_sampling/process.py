@@ -7,7 +7,7 @@ import numpy as np
 import torch
 from pathlib import Path
 import hashlib
-import matplotlib.pyplot as plt
+
 
 def create_seed(seed_str: str) -> int:
     """Create a deterministic seed from a string."""
@@ -97,7 +97,7 @@ def process_csv_file(csv_path: str, filter_instance: FilterDataRecursive, OUTPUT
 
 
     #Plotting
-    file_name = Path(csv_path).stem
+    '''file_name = Path(csv_path).stem
     plot_path = Path(OUTPUT_FOLDER).parent / "debug_plots"
     plot_path.mkdir(exist_ok=True)
     
@@ -124,7 +124,7 @@ def process_csv_file(csv_path: str, filter_instance: FilterDataRecursive, OUTPUT
     
     plt.tight_layout()
     plt.savefig(plot_path / f'density_{file_name}.png', dpi=150)
-    plt.close()
+    plt.close()'''
 
 
     #Normalisation
@@ -146,9 +146,9 @@ def process_csv_file(csv_path: str, filter_instance: FilterDataRecursive, OUTPUT
     else:  
         # Random sampling without fixed seed
         random_values = np.random.rand(len(filter_values))
-
+    keep_mask = random_values < (sampling_threshold * filter_values)
     #keep_mask = filter_values >= (random_values * sampling_threshold)
-    keep_mask = filter_values >= 0.95
+    #keep_mask = filter_values >= 0.95
     
     # Filter events
     filtered_df = df[keep_mask].copy()
@@ -165,14 +165,23 @@ def main():
     
     #os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
     #INPUT_FOLDER = r"C:\Arjun\Thesis\data\20200422_172431-sunset2\filtered"
-    INPUT_FOLDER = r"C:\Arjun\Thesis\data\20200421_170039-sunset1\filtered chunks"
-    OUTPUT_FOLDER = r"C:\Arjun\Thesis\data\20200421_170039-sunset1\filtered chunks\subsampled"
+    #INPUT_FOLDER = r"C:\Arjun\Thesis\data\20200421_170039-sunset1\filtered chunks"
+    INPUT_FOLDER = r"C:\Arjun\Thesis\data\20200427_181204-night\filtered"
+    #INPUT_FOLDER = r"C:\Arjun\Thesis\data\20200424_daytime\filter"
+
+    #OUTPUT_FOLDER = r"C:\Arjun\Thesis\data\20200421_170039-sunset1\filtered chunks\un-normalised"
     #OUTPUT_FOLDER = r"C:\Arjun\Thesis\data\20200422_172431-sunset2\subsampling"
+    #OUTPUT_FOLDER = r"C:\Arjun\Thesis\data\20200427_181204-night\subsampled"
+    #OUTPUT_FOLDER = r"C:\Arjun\Thesis\data\20200424_daytime\subsampled"
+    #OUTPUT_FOLDER = r"C:\Arjun\Thesis\data\20200422_172431-sunset2\unormal_subs"
+    #OUTPUT_FOLDER = r""
     global LOG_FILE
     #LOG_FILE = r"C:\Arjun\Thesis\data\20200422_172431-sunset2\subsampling\process_log.txt"
-    LOG_FILE = r"C:\Arjun\Thesis\data\20200421_170039-sunset1\filtered chunks\subsampled\process_log.txt"
-
-
+    #LOG_FILE = r"C:\Arjun\Thesis\data\20200421_170039-sunset1\filtered chunks\un-normalised\process_log.txt"
+    #LOG_FILE = r"C:\Arjun\Thesis\data\20200427_181204-night\subsampled\process_log.txt"
+    #LOG_FILE = r"C:\Arjun\Thesis\data\20200424_daytime\subsampled\process_log.txt"
+    LOG_FILE = r"C:\Arjun\Thesis\data\20200427_181204-night\unnormalised\process_log.txt"
+    OUTPUT_FOLDER = r"C:\Arjun\Thesis\data\20200427_181204-night\unnormalised"
     '''
     
     spatiotemporal_filtering_subsampling: #Subsampling the events randomly with probability proportional to spatiotemporal filtering values
@@ -192,11 +201,13 @@ def main():
     FILTER_SIZE = 7  # Spatial filter size (must be odd)
     
     # Sampling parameters
-    SAMPLING_THRESHOLD = 9  #0.01, 0.1, 0.05
+    SAMPLING_THRESHOLD = 0.005  #0.01, 0.1, 0.05
     FIXED_SAMPLING = True  # Set to True for deterministic results
     SEED_STR = 'fixed_subsampling'
-    NORMALIZATION_LENGTH = 300
+    #NORMALIZATION_LENGTH = 300
+    NORMALIZATION_LENGTH = None
     #data = csv_to_pyg_data(CSV_FILE)
+    break_point = 0.3
 
     print("\n2. Initializing causal density filter...")
     print(f"   Image size: {IMAGE_SIZE}")
@@ -224,6 +235,7 @@ def main():
     count = 0
     for csv_file in csv_files_sorted:
         count = count + 1
+
         print(f"Loading {csv_file.name}")
         with open(LOG_FILE, 'a') as f:
             f.write(f"Loading {csv_file.name}\n")
@@ -235,7 +247,9 @@ def main():
         filtered_df.to_csv(output_path, index=False)
         print(f"  Saved to: {output_path}")
         print(f"{count} csvs done, files left: {len(csv_files_sorted)},{int(count*100/len(csv_files_sorted))}% completed")
-        
+        if(count/len(csv_files)>break_point):
+            print("Completed 30%")
+            break
         #exit()
 
 

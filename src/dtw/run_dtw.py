@@ -47,6 +47,9 @@ class DTWFromConfig:
             events_dtw: Subsampled events with columns [x, y, polarity] (for DTW)
             events_ts: Subsampled events with all columns (for timestamp reference)
         """
+        if not use_topk:
+            print('Not top k')
+            return events_ts[:,:3], events_ts
         print(events_ts.shape)
         print(events_ts[0])
         print(events_ts[1])
@@ -213,7 +216,7 @@ class DTWFromConfig:
         return events_ts
     
     
-    def run_dtw(self, query_events, ref_events, ref_events_ts, pair):
+    def run_dtw(self, query_events, ref_events, ref_events_ts, pair,events_per_window):
         """Run subsequence DTW for a single pair"""
         
         # Run subsequence DTW
@@ -233,7 +236,7 @@ class DTWFromConfig:
         matched_ref_ts = ref_events_ts[(a_ast + b_ast) // 2, 3]
         expected_match_ts = pair['ref_match']
         timestamp_error = abs(matched_ref_ts - expected_match_ts)
-        timestamp_match = timestamp_error < 5.0  # Within 1 second
+        timestamp_match = timestamp_error < 5  # Within 1 second
         
         print("\n" + "="*40)
         print(f"DTW RESULTS - Pair {pair['pair_id']}")
@@ -257,13 +260,18 @@ class DTWFromConfig:
 
         result =  {
             'pair_id': pair['pair_id'],
+            'events_per_window': events_per_window,
             'type': pair['type'],  
             'a_ast': a_ast,
-            'b_ast': b_ast,
+            'b_ast': b_ast, 
+            'query_start_time_ts': pair["query_start"],
             'query_start_time': self.unix_to_brisbane(pair["query_start"]),
             'query_len': pair["query_l"],
+            'query_events': query_events.shape ,
+            'ref_start_time_ts':pair["ref_start"],
             'ref_start_time': self.unix_to_brisbane(pair["ref_start"]),
             'ref_len': pair["ref_l"],
+            'ref_events':  ref_events.shape ,
             #'matched_ref_start':ref_start_time,
             #'matched_ref_end': ref_end_time,
             'matched_ref_timestamp': matched_ref_ts,
@@ -271,59 +279,32 @@ class DTWFromConfig:
             'timestamp_error_seconds': timestamp_error,
             'timestamp_match': timestamp_match,
             'final_cost': float(C[-1, b_ast]),
-            'time_taken_min': round((e_time - s_time)/60, 2)
+            'time_taken_seconds': e_time - s_time
         }
-        '''gps_validation = {}
-        if 'dataset_names' in pair:
-            #query_name = pair['dataset_names']['query']
-            #ref_name = pair['dataset_names']['reference']
-            query_name = "sunset2"
-            ref_name = "sunset1"
-            
-            
-            
-            # The query_end_time is the sum of query_start + query_length from the pair config
-            query_end_time = pair['query_end']
-            
-            # The ref_end_time is from the DTW result (seconds from start of reference traverse)
-            # We need to convert from UNIX timestamp to seconds from start
-            # Get the reference traverse start time
-            ref_traverse_start = self.get_first_file_time(self.ref_folder)
-            ref_end_time_seconds = ref_end_time - ref_traverse_start
-            
-            print(f"\nPreparing GPS validation:")
-            print(f"  Query dataset: {query_name}")
-            print(f"  Query end time (from config): {query_end_time:.2f}s from query start")
-            print(f"  Reference dataset: {ref_name}")
-            print(f"  Reference end time: {ref_end_time_seconds:.2f}s from reference start")
-            
-            # Validate with GPS
-            gps_validation = self.validate_with_gps(
-                query_name, 
-                query_end_time, 
-                ref_name, 
-                ref_end_time_seconds
-            )
-            
-            # Add GPS validation to results
-        result.update(gps_validation)'''
+
         return result
     
     # ADD this new execute() method:
-    def execute(self):
+    def execute(self,pair_ids=None):
         """Main execution method - process all pairs"""
         print("\n" + "="*60)
         print("PROCESSING ALL QUERY-REFERENCE PAIRS")
         print("="*60)
         
         all_results = []
-
-        events_per_window = self.config.get('events_per_0_1sec', 25)
-        window_size = self.config.get('window_size_sec', 0.1)
         
+        events_per_window = self.config.get('events_per_0_1sec', 25)
+        print(f"events per window :{events_per_window}")
+        window_size = self.config.get('window_size_sec', 0.1)
+        max_noof_pairs = 100
+        z = 0
         for pair in self.config['pairs']:  # Loop through each pair
+            if pair_ids is not None and pair['pair_id'] not in pair_ids:
+                continue
             print("\n" + "="*60)
             print("="*60)
+            z = z + 1
+
             # Load query events using pair-specific times
             print("\n--- LOADING QUERY EVENTS ---")
             query_events_ts = self.load_event_slice(
@@ -339,7 +320,7 @@ class DTWFromConfig:
                 pair['ref_start'],       # Use pair-specific value
                 pair['ref_end']        # Use pair-specific value
             )
-
+                
             # Choosing top events
             print("\n--- PICKING TOP EVENTS ---")
             query_events, query_events_ts = self.density_select(
@@ -358,8 +339,10 @@ class DTWFromConfig:
             #exit()
             
             # Run DTW for this pair
-            result = self.run_dtw(query_events, ref_events, ref_events_ts, pair)
+            result = self.run_dtw(query_events, ref_events, ref_events_ts, pair,events_per_window)
             all_results.append(result)
+            if(z == max_noof_pairs):
+                break
         
         return all_results
     
@@ -420,7 +403,7 @@ def save_results(results, exp_no):
     import os   
     # Convert results to DataFrame
     df = pd.DataFrame(results)
-    df.to_csv(f"exp/{exp_no}.csv", index=False)
+    df.to_csv(RUN_PATH +  f"/{exp_no}.csv", index=False)
     
     print(f"Columns: {', '.join(df.columns.tolist())}")
     print(f"\nResults saved as csv")
@@ -430,17 +413,26 @@ def save_results(results, exp_no):
 ###Main
 
 if __name__ == "__main__":
-    exp_no = "2"
-    config_file = f"exp/{exp_no}_mdtw_config.json"
-    if not os.path.exists(config_file):
-        print(f"ERROR: Config file '{config_file}' not found!")
+    exp_no = "0_longer" 
+    pair_ids_to_run = None#[2, 3, 4,8,12,14] 
+    global RUN_PATH
+    RUN_PATH = r"C:\Arjun\Thesis\results\exp_0\longer"
+    global use_topk 
+    use_topk =  True
+    #config_file = f"{exp_no}_mdtw_config.json"  # no leading slash
+    config_file = "0_longer_mdtw_config.json"
+    config_path = os.path.join(RUN_PATH, config_file)  # let os handle separators
+
+    print(config_path)
+
+    if not os.path.exists(config_path):
+        print(f"ERROR: Config file '{config_path}' not found!")
         sys.exit(1)
 
-    dtw_exp = DTWFromConfig(config_file)
-    results = dtw_exp.execute()
-    
-    save_results(results,exp_no=exp_no)
-        
+    dtw_exp = DTWFromConfig(config_path)
+    results = dtw_exp.execute(pair_ids_to_run)
+    save_results(results, exp_no=exp_no)
+            
 
 
 

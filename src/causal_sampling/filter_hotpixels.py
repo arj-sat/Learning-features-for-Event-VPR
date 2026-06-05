@@ -2,9 +2,9 @@ import os
 import pandas as pd
 
 # ------------------ PATHS ------------------
-INPUT_DIR = r"C:\Arjun\Thesis\data\20200422_172431-sunset2\split data"
-OUTPUT_DIR = r"C:\Arjun\Thesis\data\20200422_172431-sunset2\filtered"
-HOT_PIXEL_FILE = r"C:\Arjun\Thesis\data\20200422_172431-sunset2\dvs_vpr_2020-04-22-17-24-21_hot_pixels.txt"
+INPUT_DIR = r"C:\Arjun\Thesis\data\20200424_daytime\split"
+OUTPUT_DIR = r"C:\Arjun\Thesis\data\20200424_daytime\filter"
+HOT_PIXEL_FILE = r"C:\Arjun\Thesis\data\20200424_daytime\dvs_vpr_2020-04-24-15-12-03_hot_pixels.txt"
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
